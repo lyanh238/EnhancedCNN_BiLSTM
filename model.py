@@ -26,6 +26,7 @@ warnings.filterwarnings('ignore')
 
 print("🚀 Enhanced Audio Emotion Recognition")
 print("All performance improvements included")
+random_seed = random.randint(0,10000)
 print("="*50)
 
 def set_seed(seed=42):
@@ -544,7 +545,7 @@ def main():
     print("🚀 Starting enhanced training...")
     
     # Configuration for reproducibility and training
-    SEED = 42  # Change this value for different random behaviors
+    SEED = random_seed  # Change this value for different random behaviors
     BATCH_SIZE = 8  # Increased batch size
     LR = 0.001  # Updated learning rate as requested
     EPOCHS = 100
