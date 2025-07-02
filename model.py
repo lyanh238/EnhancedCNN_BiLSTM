@@ -335,6 +335,45 @@ class EarlyStopping:
             self.counter = 0
         return False 
 
+class WarmupCosineScheduler:
+    """
+    Learning rate scheduler with linear warmup followed by cosine annealing
+    """
+    def __init__(self, optimizer, warmup_epochs, total_epochs, base_lr, min_lr=1e-6):
+        self.optimizer = optimizer
+        self.warmup_epochs = warmup_epochs
+        self.total_epochs = total_epochs
+        self.base_lr = base_lr
+        self.min_lr = min_lr
+        self.current_epoch = 0
+        
+    def step(self):
+        """Update learning rate based on current epoch"""
+        self.current_epoch += 1
+        
+        if self.current_epoch <= self.warmup_epochs:
+            # Linear warmup phase
+            lr = self.base_lr * (self.current_epoch / self.warmup_epochs)
+            phase = "Warmup"
+        else:
+            # Cosine annealing phase
+            cosine_epochs = self.total_epochs - self.warmup_epochs
+            cosine_progress = (self.current_epoch - self.warmup_epochs) / cosine_epochs
+            lr = self.min_lr + (self.base_lr - self.min_lr) * (
+                1 + np.cos(np.pi * cosine_progress)
+            ) / 2
+            phase = "Cosine Annealing"
+        
+        # Apply learning rate to all parameter groups
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = lr
+            
+        return lr, phase
+    
+    def get_lr(self):
+        """Get current learning rate"""
+        return self.optimizer.param_groups[0]['lr']
+
 def train_epoch(model, loader, criterion, optimizer, device):
     """Enhanced training with progress tracking"""
     model.train()
@@ -507,8 +546,9 @@ def main():
     # Configuration for reproducibility and training
     SEED = 42  # Change this value for different random behaviors
     BATCH_SIZE = 8  # Increased batch size
-    LR = 0.0005  # Fine-tuned learning rate
+    LR = 0.001  # Updated learning rate as requested
     EPOCHS = 100
+    WARMUP_EPOCHS = 5  # Warmup period
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # Set seed for reproducibility
@@ -587,9 +627,7 @@ def main():
         optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=0.01)
         
         # Learning rate scheduling
-        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            optimizer, T_0=10, T_mult=2, eta_min=1e-6
-        )
+        scheduler = WarmupCosineScheduler(optimizer, WARMUP_EPOCHS, EPOCHS, LR)
         
         # Early stopping
         early_stopping = EarlyStopping(patience=10, min_delta=0.001)
@@ -609,7 +647,7 @@ def main():
             val_loss, val_acc, val_f1, _, _ = eval_epoch(model, val_loader, criterion, DEVICE)
             
             # Update learning rate
-            scheduler.step()
+            lr, phase = scheduler.step()
             
             # Record history
             train_history['loss'].append(train_loss)
@@ -621,7 +659,7 @@ def main():
             print(f"Epoch {epoch:2d}/{EPOCHS} - "
                   f"Train: {train_loss:.4f}/{train_acc:.4f} - "
                   f"Val: {val_loss:.4f}/{val_acc:.4f}/{val_f1:.4f} - "
-                  f"LR: {optimizer.param_groups[0]['lr']:.2e}")
+                  f"LR: {lr:.2e} ({phase})")
             
             # Save best model
             if val_f1 > best_val_f1:
@@ -689,7 +727,7 @@ def main():
             'Learning Rate': LR,
             'Max Epochs': EPOCHS,
             'Optimizer': 'AdamW',
-            'Scheduler': 'CosineAnnealingWarmRestarts',
+            'Scheduler': 'WarmupCosineScheduler',
             'Device': str(DEVICE),
             'Data Augmentation': 'Pitch Shift, Noise, Time Stretch',
             'Class Balancing': 'Computed Weights',
