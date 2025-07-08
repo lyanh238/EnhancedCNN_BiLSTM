@@ -52,10 +52,10 @@ def set_seed(seed=42):
         torch.backends.cudnn.benchmark = False
         torch.backends.cudnn.enabled = True
         
-        print(f"🖥️  CUDA device: {torch.cuda.get_device_name()}")
-        print(f"🔧 CUDA deterministic: True")
+        print(f"  CUDA device: {torch.cuda.get_device_name()}")
+        print(f" CUDA deterministic: True")
     else:
-        print("🖥️  Using CPU")
+        print("  Using CPU")
     
     # Environment variables for complete reproducibility
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -64,11 +64,11 @@ def set_seed(seed=42):
     # Set PyTorch deterministic algorithms
     try:
         torch.use_deterministic_algorithms(True)
-        print("🔒 Deterministic algorithms enabled")
+        print(" Deterministic algorithms enabled")
     except:
-        print("⚠️  Deterministic algorithms not fully supported")
+        print("  Deterministic algorithms not fully supported")
     
-    print(f"✅ Enhanced seed {seed} set for cross-platform consistency")
+    print(f" Enhanced seed {seed} set for cross-platform consistency")
 
 def create_emodb_dataframe(data_path="emoDB/wav"):
     """Create DataFrame with Path and Emotions columns"""
@@ -88,7 +88,7 @@ def create_emodb_dataframe(data_path="emoDB/wav"):
             data.append({'Path': str(file_path), 'Emotions': emotion})
     
     df = pd.DataFrame(data)
-    print(f"✅ Loaded {len(df)} audio files")
+    print(f" Loaded {len(df)} audio files")
     return df
 
 def get_sound_data(path, target_sr=44100):
@@ -123,7 +123,7 @@ def augment_audio(signal, sr, augment_type=None):
 
 def extract_enhanced_features(df, label_dict, bands=128, frames=128, hop_length=512, n_fft=1024, target_sr=44100):
     """Enhanced feature extraction with augmentation and spectral features"""
-    print(f"🔧 Enhanced feature extraction: {bands} bands, {frames} frames")
+    print(f" Enhanced feature extraction: {bands} bands, {frames} frames")
     
     window_size = hop_length * (frames - 1)
     all_features = []
@@ -138,11 +138,14 @@ def extract_enhanced_features(df, label_dict, bands=128, frames=128, hop_length=
             
             for start, end in windows(data, window_size):
                 signal = data[start:end]
+                pre_emphasis = 0.97
+                emphasized_signal = np.append(signal[0], signal[1:] - pre_emphasis * signal[:-1])
+    
                 
                 # Process original + augmented versions
                 for aug_type in augment_types:
                     try:
-                        aug_signal = augment_audio(signal, sr, aug_type)
+                        aug_signal = augment_audio(emphasized_signal, sr, aug_type)
                         all_labels.append(label)
                         
                         # Enhanced feature extraction
@@ -165,7 +168,7 @@ def extract_enhanced_features(df, label_dict, bands=128, frames=128, hop_length=
         except Exception as e:
             print(f"Error processing {row.Path}: {e}")
     
-    print(f"✅ Extracted {len(all_features)} augmented windows")
+    print(f" Extracted {len(all_features)} augmented windows")
     
     # Convert to arrays and create 3-channel version
     features = np.array(all_features)
@@ -178,7 +181,7 @@ def extract_enhanced_features(df, label_dict, bands=128, frames=128, hop_length=
     ], axis=3)
     
     # Compute delta features
-    print("🔄 Computing delta features...")
+    print(" Computing delta features...")
     for i in tqdm(range(features_3ch.shape[0]), desc="Computing deltas"):
         features_3ch[i, :, :, 1] = librosa.feature.delta(features_3ch[i, :, :, 0])
         features_3ch[i, :, :, 2] = librosa.feature.delta(features_3ch[i, :, :, 0], order=2)
@@ -198,7 +201,7 @@ class AudioDataset(Dataset):
 
 class AttentionBlock(nn.Module):
     """Self-attention for CNNs"""
-    def __init__(self, in_channels):
+    def __init__(self, in_channels): # in_channels is the number of input channels
         super().__init__()
         self.query = nn.Conv2d(in_channels, in_channels // 8, 1)
         self.key = nn.Conv2d(in_channels, in_channels // 8, 1)
@@ -206,13 +209,14 @@ class AttentionBlock(nn.Module):
         self.gamma = nn.Parameter(torch.zeros(1))
         
     def forward(self, x):
+        # C number of channels, H height, W width
         B, C, H, W = x.size()
+        # query shape: (B, sequence_length, embedding_dim)
+        query = self.query(x).view(B, -1, H * W).permute(0, 2, 1) # shape: (B, H*W, C_q)
+        key = self.key(x).view(B, -1, H * W) # Shape: (B, C_k, H*W)
+        value = self.value(x).view(B, -1, H * W) # Shape: (B, C_v, H*W)
         
-        query = self.query(x).view(B, -1, H * W).permute(0, 2, 1)
-        key = self.key(x).view(B, -1, H * W)
-        value = self.value(x).view(B, -1, H * W)
-        
-        attention = torch.bmm(query, key)
+        attention = torch.bmm(query, key) # Batch matrix product (bmm)	(B×M×K) @ (B×K×N) → B×M×N
         attention = F.softmax(attention, dim=-1)
         
         out = torch.bmm(value, attention.permute(0, 2, 1))
@@ -220,8 +224,9 @@ class AttentionBlock(nn.Module):
         
         return self.gamma * out + x
 
+
 class EnhancedCNN(nn.Module):
-    """Enhanced CNN with attention and deeper architecture"""
+    """Enhanced CNN + Attention + BiLSTM"""
     def __init__(self, num_classes=7):
         super().__init__()
         
@@ -232,7 +237,7 @@ class EnhancedCNN(nn.Module):
             nn.Conv2d(64, 64, 3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.MaxPool2d(2),
+            nn.MaxPool2d(2),         # 128 → 64
             nn.Dropout2d(0.1)
         )
         
@@ -243,12 +248,12 @@ class EnhancedCNN(nn.Module):
             nn.Conv2d(128, 128, 3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.MaxPool2d(2),
+            nn.MaxPool2d(2),         # 64 → 32
             nn.Dropout2d(0.2)
         )
         
         self.attention = AttentionBlock(128)
-        
+
         self.block3 = nn.Sequential(
             nn.Conv2d(128, 256, 3, padding=1),
             nn.BatchNorm2d(256),
@@ -256,7 +261,7 @@ class EnhancedCNN(nn.Module):
             nn.Conv2d(256, 256, 3, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(),
-            nn.MaxPool2d(2),
+            nn.MaxPool2d(2),         # 32 → 16
             nn.Dropout2d(0.3)
         )
         
@@ -264,30 +269,41 @@ class EnhancedCNN(nn.Module):
             nn.Conv2d(256, 512, 3, padding=1),
             nn.BatchNorm2d(512),
             nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1))
+            nn.MaxPool2d(2)          # 16 → 8
         )
-        
+
+        # BiLSTM
+        self.bilstm = nn.LSTM(input_size=512, hidden_size=128, 
+                              bidirectional=True, batch_first=True)
+
+        # Final classifier
         self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(512, 256),
-            nn.BatchNorm1d(256),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(256, 128),
+            nn.Linear(128 * 2, 128),     # 128 * 2 vì bidirectional
             nn.BatchNorm1d(128),
             nn.ReLU(),
             nn.Dropout(0.4),
             nn.Linear(128, num_classes)
         )
-
+        
     def forward(self, x):
-        x = self.block1(x)
-        x = self.block2(x)
-        x = self.attention(x)
-        x = self.block3(x)
-        x = self.block4(x)
-        x = self.classifier(x)
-        return x
+        x = self.block1(x)         # (B, 64, 64, 64)
+        x = self.block2(x)         # (B, 128, 32, 32)
+        x = self.attention(x)      # (B, 128, 32, 32)
+        x = self.block3(x)         # (B, 256, 16, 16)
+        x = self.block4(x)         # (B, 512, 8, 8)
+
+        # Reshape để đưa vào BiLSTM
+        B, C, H, W = x.size()
+        x = x.permute(0, 2, 3, 1).contiguous()  # (B, H, W, C)
+        x = x.view(B, H * W, C)                 # (B, sequence_len=64, 512)
+
+        # BiLSTM
+        lstm_out, _ = self.bilstm(x)            # (B, seq_len, 256)
+        last_hidden = lstm_out[:, -1, :]        # (B, 256)
+
+        # Classifier
+        out = self.classifier(last_hidden)      # (B, num_classes)
+        return out
 
 def initialize_weights(model):
     """
@@ -314,8 +330,8 @@ def initialize_weights(model):
             nn.init.constant_(module.weight, 1)
             nn.init.constant_(module.bias, 0)
     
-    print("✅ He initialization applied to all Conv2d and Linear layers")
-    print("✅ BatchNorm layers initialized with standard values")
+    print("He initialization applied to all Conv2d and Linear layers")
+    print("BatchNorm layers initialized with standard values")
 
 class EarlyStopping:
     """Early stopping to prevent overfitting"""
@@ -457,7 +473,7 @@ def plot_training_history(history, save_path='training_history.png'):
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.show()
-    print(f"📊 Training history plot saved as {save_path}")
+    print(f" Training history plot saved as {save_path}")
 
 def plot_confusion_matrix(y_true, y_pred, class_names, save_path='confusion_matrix.png'):
     """Plot confusion matrix"""
@@ -482,7 +498,7 @@ def plot_confusion_matrix(y_true, y_pred, class_names, save_path='confusion_matr
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.show()
-    print(f"📊 Confusion matrix saved as {save_path}")
+    print(f" Confusion matrix saved as {save_path}")
 
 def save_training_logs(history, test_results, model_info, save_path='training_logs.txt'):
     """Save detailed training logs to file"""
@@ -529,20 +545,20 @@ def save_training_logs(history, test_results, model_info, save_path='training_lo
         # Performance summary
         f.write("PERFORMANCE SUMMARY:\n")
         f.write("-"*30 + "\n")
-        f.write(f"🎯 Final Test Accuracy: {test_results['Test Accuracy']:.4f} ({test_results['Test Accuracy']*100:.1f}%)\n")
-        f.write(f"🎯 Final Test F1 Score: {test_results['Test F1 Score']:.4f}\n")
-        f.write(f"🎯 Best Validation F1: {test_results['Best Val F1']:.4f}\n")
-        f.write(f"🎯 Total Epochs Trained: {len(history['loss'])}\n")
-        f.write(f"🎯 Emotion Coverage: {test_results['Emotion Coverage']}/7\n")
+        f.write(f" Final Test Accuracy: {test_results['Test Accuracy']:.4f} ({test_results['Test Accuracy']*100:.1f}%)\n")
+        f.write(f" Final Test F1 Score: {test_results['Test F1 Score']:.4f}\n")
+        f.write(f" Best Validation F1: {test_results['Best Val F1']:.4f}\n")
+        f.write(f" Total Epochs Trained: {len(history['loss'])}\n")
+        f.write(f" Emotion Coverage: {test_results['Emotion Coverage']}/7\n")
         
         if test_results['Test Accuracy'] > 0.80 and test_results['Test F1 Score'] > 0.75:
-            f.write("🎉 ALL PERFORMANCE TARGETS ACHIEVED!\n")
+            f.write(" ALL PERFORMANCE TARGETS ACHIEVED!\n")
         
-    print(f"📝 Training logs saved as {save_path}")
+    print(f" Training logs saved as {save_path}")
 
 def main():
     """Main execution with all enhancements"""
-    print("🚀 Starting enhanced training...")
+    print(" Starting enhanced training...")
     
     # Configuration for reproducibility and training
     SEED = random_seed  # Change this value for different random behaviors
@@ -560,22 +576,22 @@ def main():
         'sad': 4, 'neutral': 5, 'boredom': 6
     }
     
-    print(f"🖥️  Device: {DEVICE}")
+    print(f"  Device: {DEVICE}")
     
     try:
         # Load data
-        print("📂 Loading EmoDB dataset...")
+        print(" Loading EmoDB dataset...")
         df = create_emodb_dataframe("emoDB/wav")
         
         # Enhanced feature extraction with augmentation
-        print("🔧 Enhanced feature extraction with augmentation...")
+        print(" Enhanced feature extraction with augmentation...")
         features, labels = extract_enhanced_features(df, label_to_index, bands=128, frames=128)
-        print(f"✅ Features shape: {features.shape}")
-        print(f"✅ Labels shape: {labels.shape}")
+        print(f" Features shape: {features.shape}")
+        print(f" Labels shape: {labels.shape}")
         
         # Class distribution analysis
         unique, counts = np.unique(labels, return_counts=True)
-        print(f"\n📊 Augmented class distribution:")
+        print(f"\n Augmented class distribution:")
         for label_idx, count in zip(unique, counts):
             emotion = [k for k, v in label_to_index.items() if v == label_idx][0]
             print(f"  {emotion}: {count} windows ({count/len(labels)*100:.1f}%)")
@@ -585,7 +601,7 @@ def main():
         labels = labels.astype(np.int64)
         
         # Enhanced data splitting
-        print("\n📊 Splitting data...")
+        print("\n Splitting data...")
         x_train, x_test, y_train, y_test = train_test_split(
             features, labels, test_size=0.15, random_state=42, stratify=labels
         )
@@ -596,7 +612,7 @@ def main():
         print(f"Train: {len(x_train)}, Val: {len(x_val)}, Test: {len(x_test)}")
         
         # Compute class weights for balanced training
-        print("\n⚖️  Computing class weights for balanced training...")
+        print("\n  Computing class weights for balanced training...")
         class_weights = compute_class_weight(
             'balanced', classes=np.unique(y_train), y=y_train
         )
@@ -605,7 +621,7 @@ def main():
                                 zip(label_to_index.keys(), class_weights)})
         
         # Create datasets and loaders
-        print("📦 Creating enhanced datasets...")
+        print(" Creating enhanced datasets...")
         train_dataset = AudioDataset(x_train, y_train)
         val_dataset = AudioDataset(x_val, y_val)
         test_dataset = AudioDataset(x_test, y_test)
@@ -615,7 +631,7 @@ def main():
         test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, num_workers=2)
         
         # Enhanced model with attention
-        print("🤖 Initializing enhanced CNN with attention...")
+        print(" Initializing enhanced CNN with attention...")
         model = EnhancedCNN(num_classes=7).to(DEVICE)
         
         # Apply He initialization
@@ -636,7 +652,7 @@ def main():
         print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
         
         # Enhanced training loop
-        print("\n🏋️ Enhanced training with all improvements...")
+        print("\n Enhanced training with all improvements...")
         best_val_f1 = 0.0
         train_history = {'loss': [], 'acc': [], 'val_loss': [], 'val_acc': [], 'val_f1': []}
         
@@ -666,28 +682,28 @@ def main():
             if val_f1 > best_val_f1:
                 best_val_f1 = val_f1
                 torch.save(model.state_dict(), 'enhanced_best_model.pth')
-                print(f"  💾 New best model saved! F1: {val_f1:.4f}")
+                print(f"   New best model saved! F1: {val_f1:.4f}")
             
             # Early stopping check
             if early_stopping(val_f1):
-                print(f"  🛑 Early stopping triggered at epoch {epoch}")
+                print(f"   Early stopping triggered at epoch {epoch}")
                 break
         
         # Final evaluation
-        print(f"\n🎯 Final evaluation with best model...")
+        print(f"\n Final evaluation with best model...")
         model.load_state_dict(torch.load('enhanced_best_model.pth'))
         test_loss, test_acc, test_f1, test_preds, test_targets = eval_epoch(
             model, test_loader, criterion, DEVICE
         )
-        
-        print(f"\n🏆 ENHANCED RESULTS:")
-        print(f"📈 Test Accuracy: {test_acc:.4f} ({test_acc*100:.1f}%)")
-        print(f"📈 Test F1 Score: {test_f1:.4f}")
-        print(f"📈 Best Val F1: {best_val_f1:.4f}")
+    
+        print(f"\n ENHANCED RESULTS:")
+        print(f" Test Accuracy: {test_acc:.4f} ({test_acc*100:.1f}%)")
+        print(f" Test F1 Score: {test_f1:.4f}")
+        print(f" Best Val F1: {best_val_f1:.4f}")
         
         # Prediction diversity analysis
         unique_preds, pred_counts = np.unique(test_preds, return_counts=True)
-        print(f"\n🔍 Enhanced prediction analysis:")
+        print(f"\n Enhanced prediction analysis:")
         print(f"Model predicts {len(unique_preds)}/7 emotions:")
         for pred_label, count in zip(unique_preds, pred_counts):
             emotion = [k for k, v in label_to_index.items() if v == pred_label][0]
@@ -695,22 +711,22 @@ def main():
         
         # Detailed classification report
         emotion_names = [k for k, v in sorted(label_to_index.items(), key=lambda x: x[1])]
-        print(f"\n📋 Enhanced Classification Report:")
+        print(f"\n Enhanced Classification Report:")
         print(classification_report(test_targets, test_preds, target_names=emotion_names))
         
         # Performance comparison
-        print(f"\n📊 Performance Summary:")
-        print(f"🎯 Accuracy: {test_acc:.4f} ")
-        print(f"🎯 F1 Score: {test_f1:.4f} ")
-        print(f"🎯 Emotion Coverage: {len(unique_preds)}/7 ")
+        print(f"\n Performance Summary:")
+        print(f" Accuracy: {test_acc:.4f} ")
+        print(f" F1 Score: {test_f1:.4f} ")
+        print(f" Emotion Coverage: {len(unique_preds)}/7 ")
         
         if test_acc > 0.80 and test_f1 > 0.75 and len(unique_preds) == 7:
-            print("🎉 All performance targets achieved!")
+            print(" All performance targets achieved!")
         else:
-            print("📈 Room for further improvement")
+            print(" Room for further improvement")
         
         # Generate visualizations and save logs
-        print(f"\n📊 Generating visualizations and saving logs...")
+        print(f"\n Generating visualizations and saving logs...")
         
         # Plot training history
         plot_training_history(train_history, 'enhanced_training_history.png')
@@ -752,8 +768,8 @@ def main():
         # Save comprehensive training logs
         save_training_logs(train_history, test_results, model_info, 'enhanced_training_logs.txt')
         
-        print(f"\n✅ All visualizations and logs saved successfully!")
-        print(f"📁 Files created:")
+        print(f"\n All visualizations and logs saved successfully!")
+        print(f" Files created:")
         print(f"   • enhanced_training_history.png - Training curves")
         print(f"   • enhanced_confusion_matrix.png - Confusion matrix")
         print(f"   • enhanced_training_logs.txt - Detailed training logs")
@@ -762,7 +778,7 @@ def main():
         return test_acc, test_f1, len(unique_preds)
         
     except Exception as e:
-        print(f"❌ Error during enhanced training: {e}")
+        print(f" Error during enhanced training: {e}")
         import traceback
         traceback.print_exc()
         return 0.0, 0.0, 0
