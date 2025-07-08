@@ -24,14 +24,14 @@ import random
 import os
 warnings.filterwarnings('ignore')
 
-print("🚀 Enhanced Audio Emotion Recognition")
+print(" Enhanced Audio Emotion Recognition")
 print("All performance improvements included")
 random_seed = random.randint(0,10000)
 print("="*50)
 
 def set_seed(seed=42):
     """Enhanced seed setting for cross-platform consistency"""
-    print(f"🌱 Setting random seed to {seed} for reproducibility...")
+    print(f" Setting random seed to {seed} for reproducibility...")
     
     # Python random
     random.seed(seed)
