@@ -138,6 +138,8 @@ def extract_enhanced_features(df, label_dict, bands=128, frames=128, hop_length=
             
             for start, end in windows(data, window_size):
                 signal = data[start:end]
+                pre_emphasis = 0.97
+                emphasized_signal = np.append(signal[0], signal[1:] - pre_emphasis * signal[:-1])
                 
                 # Process original + augmented versions
                 for aug_type in augment_types:
