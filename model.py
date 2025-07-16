@@ -73,10 +73,9 @@ def set_seed(seed=42):
 def create_emodb_dataframe(data_path="emoDB/wav"):
     """Create DataFrame with Path and Emotions columns"""
     emotion_mapping = {
-        'A': 'angry', 'E': 'disgust', 'F': 'fear', 'T': 'sad',
-        'L': 'boredom', 'W': 'happy', 'N': 'neutral'
+        'A': 'fear', 'E': 'disgust', 'F': 'happy', 'T': 'sad',
+        'L': 'boredom', 'W': 'angry', 'N': 'neutral'
     }
-    
     data_path = Path(data_path)
     wav_files = list(data_path.glob("*.wav"))
     
